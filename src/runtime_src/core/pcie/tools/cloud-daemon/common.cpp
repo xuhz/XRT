@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <strings.h>
 #include <algorithm>
+#include <dlfcn.h>
 
 #include "common.h"
 #include "sw_msg.h"
@@ -155,80 +156,75 @@ int waitForMsg(pcieFunc& dev, int localfd, int remotefd, long interval)
 }
 
 /*
- * Fetch sw channel msg from local mailbox fd, process it by passing it through
- * to socket fd or by the callback.
+ * Fetch sw channel msg from local mailbox fd
  */
-int processLocalMsg(pcieFunc& dev, int localfd, int remotefd, msgHandler cb)
+std::shared_ptr<sw_msg> getLocalMsg(pcieFunc& dev, int localfd)
 {
-    size_t msgsz = getMailboxMsgSize(dev, localfd);
-    if (msgsz == 0)
-        return -EINVAL;
-
-    std::shared_ptr<sw_msg> swmsg = std::make_shared<sw_msg>(msgsz);
-    if (swmsg == nullptr)
-        return -ENOMEM;
-
-    if (!readMsg(dev, localfd, swmsg.get()))
-        return -EINVAL;
-
-    int pass;
-    std::shared_ptr<sw_msg> swmsgProcessed;
-    if (!cb) {
-        // Continue passing received msg to local mailbox.
-        swmsgProcessed = swmsg;
-        pass = FOR_REMOTE;
-    } else {
-        pass = (*cb)(dev, swmsg, swmsgProcessed);
-    }
-
-    bool sent;
-    if (pass == FOR_LOCAL)
-        sent = sendMsg(dev, localfd, swmsgProcessed.get());
-    else if (pass == FOR_REMOTE)
-        sent = sendMsg(dev, remotefd, swmsgProcessed.get());
-    else // Error occured
-        return pass;
-
-    return sent ? 0 : -EINVAL;
+	size_t msgsz = getMailboxMsgSize(dev, localfd);
+	if (msgsz == 0)
+		return nullptr;
+	
+	std::shared_ptr<sw_msg> swmsg = std::make_shared<sw_msg>(msgsz);
+	if (swmsg == nullptr)
+		return nullptr;
+	
+	if (!readMsg(dev, localfd, swmsg.get()))
+		return nullptr;
+	
+	return swmsg;
 }
 
 /*
  * Fetch sw channel msg from remote socket fd, process it by passing it through
  * to local mailbox fd or by the callback.
  */
-int processRemoteMsg(pcieFunc& dev, int localfd, int remotefd, msgHandler cb)
+std::shared_ptr<sw_msg> getRemoteMsg(pcieFunc& dev, int remotefd)
 {
-    size_t msgsz = getSockMsgSize(dev, remotefd);
-    if (msgsz == 0)
-        return -EAGAIN;
+	size_t msgsz = getSockMsgSize(dev, remotefd);
+	if (msgsz == 0)
+		return nullptr;
+	
+	if (msgsz > 1024 * 1024 * 1024)
+		return nullptr;
+	
+	std::shared_ptr<sw_msg> swmsg = std::make_shared<sw_msg>(msgsz);
+	if (swmsg == nullptr)
+		return nullptr;
+	
+	if (!readMsg(dev, remotefd, swmsg.get()))
+		return nullptr;
+	
+	return swmsg;
+}
 
-    if (msgsz > 1024 * 1024 * 1024)
-        return -EMSGSIZE;
-
-    std::shared_ptr<sw_msg> swmsg = std::make_shared<sw_msg>(msgsz);
-    if (swmsg == nullptr)
-        return -ENOMEM;
-
-    if (!readMsg(dev, remotefd, swmsg.get()))
-        return -EAGAIN;
-
+/*
+ *  passing the msg directly or the processed msg by the callback 
+ *  to local mailbox or the peer side
+ */
+int handleMsg(pcieFunc& dev, struct queue_msg &msg)
+{
     int pass;
+	std::shared_ptr<sw_msg> swmsg = msg.data;
     std::shared_ptr<sw_msg> swmsgProcessed;
-    if (!cb) {
+    if (!msg.cb) {
         // Continue passing received msg to local mailbox.
         swmsgProcessed = swmsg;
-        pass = FOR_LOCAL;
+		if (msg.type == LOCAL_MSG)
+        	pass = FOR_REMOTE;
+		else if (msg.type == REMOTE_MSG)
+			pass = FOR_LOCAL;
+		else { //can't get here
+        	dev.log(LOG_ERR, "handleMsg: illegal msg received");
+			return -EINVAL;
+		}
     } else {
-        pass = (*cb)(dev, swmsg, swmsgProcessed);
+        pass = (*msg.cb)(dev, swmsg, swmsgProcessed);
     }
 
-    bool sent;
     if (pass == FOR_LOCAL)
-        sent = sendMsg(dev, localfd, swmsgProcessed.get());
+        return sendMsg(dev, msg.localFd, swmsgProcessed.get());
     else if (pass == FOR_REMOTE)
-        sent = sendMsg(dev, remotefd, swmsgProcessed.get());
+        return sendMsg(dev, msg.remoteFd, swmsgProcessed.get());
     else // Error occured
-        return pass;
-
-    return sent ? 0 : -EINVAL;
+		return -EINVAL;
 }
