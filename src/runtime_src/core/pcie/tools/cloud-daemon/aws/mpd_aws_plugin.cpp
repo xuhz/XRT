@@ -40,10 +40,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include "core/include/xclbin.h"
-#include "../pciefunc.h"
-#include "../sw_msg.h"
-#include "../common.h"
-#include "../mpd_plugin.h"
 #include "aws_dev.h"
 /*
  * Functions each plguin must provide

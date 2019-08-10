@@ -31,6 +31,7 @@
 #include <fstream>
 #include <vector>
 #include <thread>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <queue>
@@ -50,7 +51,7 @@ static void *plugin_handle;
 static init_fn plugin_init;
 static fini_fn plugin_fini;
 static struct mpd_plugin_callbacks plugin_cbs;
-static const std::string plugin_path("/lib/firmware/xilinx/mpd_plugin.so");
+static const std::string plugin_path("/opt/xilinx/xrt/lib/libmpd_plugin.so");
 
 // Init plugin callbacks
 static void init_plugin()
@@ -134,28 +135,36 @@ static void mpd_getMsg(size_t index, std::mutex *mtx,
 		ret = (*plugin_cbs.get_remote_msd_fd)(dev, msdfd);
 		if (ret) {
 			syslog(LOG_ERR, "failed to get remote fd in plugin");
+			quit = true;
 			return;
 		}
 	} else {
-		if (!dev.loadConf())
+		if (!dev.loadConf()) {
+			quit = true;
 			return;
+		}
 		
 		ip = getIP(dev.getHost());
 		if (ip.empty()) {
 			dev.log(LOG_ERR, "Can't find out IP from host: %s", dev.getHost());
+			quit = true;
 			return;
 		}
 		
 		dev.log(LOG_INFO, "peer msd ip=%s, port=%d, id=0x%x",
 			ip.c_str(), dev.getPort(), dev.getId());
 		
-		if ((msdfd = connectMsd(dev, ip, dev.getPort(), dev.getId())) < 0)
+		if ((msdfd = connectMsd(dev, ip, dev.getPort(), dev.getId())) < 0) {
+			quit = true;
 			return;
+		}
 	}
 	
 	mbxfd = dev.getMailbox();
-	if (mbxfd == -1)
-	    return;
+	if (mbxfd == -1) {
+		quit = true;
+		return;
+	}
 
 	//notify mailbox driver the daemon is ready 
 	if (plugin_cbs.mb_notify)
@@ -224,8 +233,14 @@ static void mpd_handleMsg(size_t index, std::mutex *mtx,
 	std::unique_lock<std::mutex> lck(*mtx, std::defer_lock);
 	for ( ;; ) {
 		lck.lock();
-		while (msgq->empty())
-			(*cv).wait(lck);
+		while (msgq->empty()) {
+			(*cv).wait_for(lck, std::chrono::seconds(3));
+			if (quit) {
+				lck.unlock();
+				goto out;
+			}
+		}
+
 		struct queue_msg msg = msgq->front();
 		msgq->pop();
 		lck.unlock();
@@ -234,6 +249,7 @@ static void mpd_handleMsg(size_t index, std::mutex *mtx,
 		if (!handleMsg(dev, msg))
 			break;
 	}
+out:	
 	*is_handling = false;
 	dev.log(LOG_INFO, "mpd_handleMsg thread %d exit!!", index);
 }

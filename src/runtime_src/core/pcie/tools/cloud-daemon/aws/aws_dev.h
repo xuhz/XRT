@@ -23,6 +23,10 @@
 #include "core/pcie/driver/linux/include/mailbox_proto.h"
 #include "core/pcie/driver/linux/include/mgmt-ioctl.h"
 #include "../pciefunc.h"
+#include "../sw_msg.h"
+#include "../common.h"
+#include "../mpd_plugin.h"
+
 #ifdef INTERNAL_TESTING_FOR_AWS
 #include "core/pcie/driver/linux/include/xocl_ioctl.h"
 #endif
