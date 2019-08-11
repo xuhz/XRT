@@ -38,7 +38,7 @@ public:
 private:
 	std::shared_ptr<pcidev::pci_device> mgmtDev;
 	int retrieve_xclbin(const xclBin *&orig_xclbin,
-		   std::shared_ptr<void> &real_xclbin);
+		   std::shared_ptr<std::vector<char>> &real_xclbin);
 };
 
 

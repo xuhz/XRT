@@ -118,17 +118,17 @@ int xclLoadXclBin(size_t index, const axlf *&xclbin)
 int BareMetal::xclLoadXclBin(const xclBin *&buffer)
 {
 	char *xclbininmemory = reinterpret_cast<char*> (const_cast<xclBin*> (buffer));
-	std::shared_ptr<void> real_xclbin;
+	std::shared_ptr<std::vector<char>> real_xclbin;
 	if (memcmp(xclbininmemory, "xclbin2", 8) != 0)
    		return -1;   
 
 	retrieve_xclbin(buffer, real_xclbin);
-	xclmgmt_ioc_bitstream_axlf obj = {reinterpret_cast<axlf *>(real_xclbin.get())};	
+	xclmgmt_ioc_bitstream_axlf obj = {reinterpret_cast<axlf *>(real_xclbin.get()->data())};	
 	return mgmtDev->ioctl(XCLMGMT_IOCICAPDOWNLOAD_AXLF, &obj);
 }
 
 int BareMetal::retrieve_xclbin(const xclBin *&orig,
-	   std::shared_ptr<void> &real_xclbin)
+	   std::shared_ptr<std::vector<char>> &real_xclbin)
 {
 	//go get the real_xclbin yourself
 	real_xclbin = std::make_shared<std::vector<char>>(orig->m_header.m_length, 0);

@@ -140,97 +140,96 @@ int local_msg_handler(pcieFunc& dev, std::shared_ptr<sw_msg>& orig,
     reqSize = orig->payloadSize() - sizeof(mailbox_req);
     
     dev.log(LOG_INFO, "mpd daemon: request %d received", req->req);
-	{
-		switch (req->req) {
-		case MAILBOX_REQ_LOAD_XCLBIN: {//mandatory for every plugin
-		    const axlf *xclbin = reinterpret_cast<axlf *>(req->data);
-		    if (reqSize < sizeof(*xclbin)) {
-		        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
-		        ret = -EINVAL;
-		        break;
-		    }
-	        if (!plugin_cbs.load_xclbin) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.load_xclbin)(dev.getIndex(), xclbin);
-		    break;
-		}
-		case MAILBOX_REQ_PEER_DATA: {//optional. aws plugin need to implement this. 
-			void *resp;
-			size_t resp_len = 0;
-			struct mailbox_subdev_peer *subdev_req =
-				reinterpret_cast<struct mailbox_subdev_peer *>(req->data);
-			if (reqSize < sizeof(*subdev_req)) {
-		        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
-		        ret = -EINVAL;
-		        break;
-			}
-	        if (!plugin_cbs.get_peer_data) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.get_peer_data)(dev.getIndex(),
-				   subdev_req, resp, resp_len);
-			if (!ret) {
-				processed = std::make_shared<sw_msg>(resp, resp_len, orig->id(),
-					   MB_REQ_FLAG_RESPONSE);
-				dev.log(LOG_INFO, "mpd daemon: response %d sent", req->req);
-				return FOR_LOCAL;
-			}
+	
+	switch (req->req) {
+	case MAILBOX_REQ_LOAD_XCLBIN: {//mandatory for every plugin
+	    const axlf *xclbin = reinterpret_cast<axlf *>(req->data);
+	    if (reqSize < sizeof(*xclbin)) {
+	        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
+	        ret = -EINVAL;
+	        break;
+	    }
+	    if (!plugin_cbs.load_xclbin) {
+        	ret = -ENOTSUP;
 			break;
 		}
-		case MAILBOX_REQ_USER_PROBE: {//useful for aws plugin
-			struct mailbox_conn_resp resp = {0};
-			size_t resp_len = sizeof(struct mailbox_conn_resp);
-			resp.conn_flags |= MB_PEER_READY;
-			processed = std::make_shared<sw_msg>(&resp, resp_len, orig->id(),
-				MB_REQ_FLAG_RESPONSE);
+		ret = (*plugin_cbs.load_xclbin)(dev.getIndex(), xclbin);
+	    break;
+	}
+	case MAILBOX_REQ_PEER_DATA: {//optional. aws plugin need to implement this. 
+		void *resp;
+		size_t resp_len = 0;
+		struct mailbox_subdev_peer *subdev_req =
+			reinterpret_cast<struct mailbox_subdev_peer *>(req->data);
+		if (reqSize < sizeof(*subdev_req)) {
+	        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
+	        ret = -EINVAL;
+	        break;
+		}
+	    if (!plugin_cbs.get_peer_data) {
+        	ret = -ENOTSUP;
+			break;
+		}
+		ret = (*plugin_cbs.get_peer_data)(dev.getIndex(),
+			   subdev_req, resp, resp_len);
+		if (!ret) {
+			processed = std::make_shared<sw_msg>(resp, resp_len, orig->id(),
+				   MB_REQ_FLAG_RESPONSE);
 			dev.log(LOG_INFO, "mpd daemon: response %d sent", req->req);
 			return FOR_LOCAL;
 		}
-		case MAILBOX_REQ_LOCK_BITSTREAM: {//optional
-	        if (!plugin_cbs.lock_bitstream) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.lock_bitstream)(dev.getIndex());
+		break;
+	}
+	case MAILBOX_REQ_USER_PROBE: {//useful for aws plugin
+		struct mailbox_conn_resp resp = {0};
+		size_t resp_len = sizeof(struct mailbox_conn_resp);
+		resp.conn_flags |= MB_PEER_READY;
+		processed = std::make_shared<sw_msg>(&resp, resp_len, orig->id(),
+			MB_REQ_FLAG_RESPONSE);
+		dev.log(LOG_INFO, "mpd daemon: response %d sent", req->req);
+		return FOR_LOCAL;
+	}
+	case MAILBOX_REQ_LOCK_BITSTREAM: {//optional
+	    if (!plugin_cbs.lock_bitstream) {
+        	ret = -ENOTSUP;
 			break;
 		}
-		case MAILBOX_REQ_UNLOCK_BITSTREAM: { //optional
-	        if (!plugin_cbs.unlock_bitstream) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.unlock_bitstream)(dev.getIndex());
+		ret = (*plugin_cbs.lock_bitstream)(dev.getIndex());
+		break;
+	}
+	case MAILBOX_REQ_UNLOCK_BITSTREAM: { //optional
+	    if (!plugin_cbs.unlock_bitstream) {
+        	ret = -ENOTSUP;
 			break;
 		}
-		case MAILBOX_REQ_HOT_RESET: {//optional
-	        if (!plugin_cbs.hot_reset) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.hot_reset)(dev.getIndex());
+		ret = (*plugin_cbs.unlock_bitstream)(dev.getIndex());
+		break;
+	}
+	case MAILBOX_REQ_HOT_RESET: {//optional
+	    if (!plugin_cbs.hot_reset) {
+        	ret = -ENOTSUP;
 			break;
 		}
-		case MAILBOX_REQ_RECLOCK: {//optional
-			struct xclmgmt_ioc_freqscaling *obj =
-				reinterpret_cast<struct xclmgmt_ioc_freqscaling *>(req->data);
-	        if (!plugin_cbs.hot_reset) {
-            	ret = -ENOTSUP;
-				break;
-			}
-			ret = (*plugin_cbs.reclock2)(dev.getIndex(), obj);
+		ret = (*plugin_cbs.hot_reset)(dev.getIndex());
+		break;
+	}
+	case MAILBOX_REQ_RECLOCK: {//optional
+		struct xclmgmt_ioc_freqscaling *obj =
+			reinterpret_cast<struct xclmgmt_ioc_freqscaling *>(req->data);
+	    if (!plugin_cbs.hot_reset) {
+        	ret = -ENOTSUP;
 			break;
 		}
-		default:
-		    break;
-		}
+		ret = (*plugin_cbs.reclock2)(dev.getIndex(), obj);
+		break;
+	}
+	default:
+	    break;
 	}
 out:	
 	processed = std::make_shared<sw_msg>(&ret, sizeof(ret), orig->id(),
 		MB_REQ_FLAG_RESPONSE);
-    dev.log(LOG_INFO, "aws mpd daemon: response %d sent ret = %d", req->req, ret);
+    dev.log(LOG_INFO, "mpd daemon: response %d sent ret = %d", req->req, ret);
     return FOR_LOCAL;
 }
 
