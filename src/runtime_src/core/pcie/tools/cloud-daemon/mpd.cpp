@@ -118,6 +118,171 @@ static int connectMsd(pcieFunc& dev, std::string ip, uint16_t port, int id)
     return msdfd;
 }
 
+/*
+ * Local mailbox msg handler which is used to interpret the msg and handle it.
+ * If libmpd_plugin.so is found, which means the users don't need the software
+ * mailbox in the mgmt side, instead, users want to inperpret and handle the
+ * the mailbox msg from user PF themselves, this local mailbox msg handler is
+ * required. A typecal use case is, xclbin download, when the users want have
+ * their own control.
+ */ 
+int local_msg_handler(pcieFunc& dev, std::shared_ptr<sw_msg>& orig,
+    std::shared_ptr<sw_msg>& processed)
+{
+	int ret = 0;
+    mailbox_req *req = reinterpret_cast<mailbox_req *>(orig->payloadData());
+    size_t reqSize;
+    if (orig->payloadSize() < sizeof(mailbox_req)) {
+        dev.log(LOG_ERR, "local request dropped, wrong size");
+        ret = -EINVAL;
+		goto out;
+    }
+    reqSize = orig->payloadSize() - sizeof(mailbox_req);
+    
+    dev.log(LOG_INFO, "mpd daemon: request %d received", req->req);
+	{
+		switch (req->req) {
+		case MAILBOX_REQ_LOAD_XCLBIN: {//mandatory for every plugin
+		    const axlf *xclbin = reinterpret_cast<axlf *>(req->data);
+		    if (reqSize < sizeof(*xclbin)) {
+		        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
+		        ret = -EINVAL;
+		        break;
+		    }
+	        if (!plugin_cbs.load_xclbin) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.load_xclbin)(dev.getIndex(), xclbin);
+		    break;
+		}
+		case MAILBOX_REQ_PEER_DATA: {//optional. aws plugin need to implement this. 
+			void *resp;
+			size_t resp_len = 0;
+			struct mailbox_subdev_peer *subdev_req =
+				reinterpret_cast<struct mailbox_subdev_peer *>(req->data);
+			if (reqSize < sizeof(*subdev_req)) {
+		        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
+		        ret = -EINVAL;
+		        break;
+			}
+	        if (!plugin_cbs.get_peer_data) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.get_peer_data)(dev.getIndex(),
+				   subdev_req, resp, resp_len);
+			if (!ret) {
+				processed = std::make_shared<sw_msg>(resp, resp_len, orig->id(),
+					   MB_REQ_FLAG_RESPONSE);
+				dev.log(LOG_INFO, "mpd daemon: response %d sent", req->req);
+				return FOR_LOCAL;
+			}
+			break;
+		}
+		case MAILBOX_REQ_USER_PROBE: {//useful for aws plugin
+			struct mailbox_conn_resp resp = {0};
+			size_t resp_len = sizeof(struct mailbox_conn_resp);
+			resp.conn_flags |= MB_PEER_READY;
+			processed = std::make_shared<sw_msg>(&resp, resp_len, orig->id(),
+				MB_REQ_FLAG_RESPONSE);
+			dev.log(LOG_INFO, "mpd daemon: response %d sent", req->req);
+			return FOR_LOCAL;
+		}
+		case MAILBOX_REQ_LOCK_BITSTREAM: {//optional
+	        if (!plugin_cbs.lock_bitstream) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.lock_bitstream)(dev.getIndex());
+			break;
+		}
+		case MAILBOX_REQ_UNLOCK_BITSTREAM: { //optional
+	        if (!plugin_cbs.unlock_bitstream) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.unlock_bitstream)(dev.getIndex());
+			break;
+		}
+		case MAILBOX_REQ_HOT_RESET: {//optional
+	        if (!plugin_cbs.hot_reset) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.hot_reset)(dev.getIndex());
+			break;
+		}
+		case MAILBOX_REQ_RECLOCK: {//optional
+			struct xclmgmt_ioc_freqscaling *obj =
+				reinterpret_cast<struct xclmgmt_ioc_freqscaling *>(req->data);
+	        if (!plugin_cbs.hot_reset) {
+            	ret = -ENOTSUP;
+				break;
+			}
+			ret = (*plugin_cbs.reclock2)(dev.getIndex(), obj);
+			break;
+		}
+		default:
+		    break;
+		}
+	}
+out:	
+	processed = std::make_shared<sw_msg>(&ret, sizeof(ret), orig->id(),
+		MB_REQ_FLAG_RESPONSE);
+    dev.log(LOG_INFO, "aws mpd daemon: response %d sent ret = %d", req->req, ret);
+    return FOR_LOCAL;
+}
+
+/*
+ * Function to notify sofeware mailbox online/offline.
+ * This is usefull for aws. Since there is no mgmt, when xocl driver is loaded,
+ * and before the mpd daemon is running, sending MAILBOX_REQ_USER_PROBE msg
+ * will timeout and get no response, so there is no chance to know the card is
+ * ready. 
+ * A workaround is, when the mpd open/close the mailbox instance, a fake
+ * MAILBOX_REQ_MGMT_STATE msg is sent to mailbox in xocl, pretending a mgmt is
+ * ready, then xocl will send a MAILBOX_REQ_USER_PROBE again. This time, mpd
+ * will get and msg and send back a MB_PEER_READY response.
+ *
+ * For other cloud vendors, as long as they want to handle mailbox msg themselves,
+ * eg. load xclbin, mpd and plugin is required. mpd exiting will send a offline
+ * notification to xocl, which will mark the card as not ready.
+ */
+int mb_notify(pcieFunc &dev, int &fd, bool online)
+{
+	struct queue_msg msg;
+	std::shared_ptr<sw_msg> swmsg;
+	std::shared_ptr<std::vector<char>> buf;
+	struct mailbox_req *mb_req = NULL;
+	struct mailbox_peer_state mb_conn = { 0 };
+	size_t data_len = sizeof(struct mailbox_peer_state) + sizeof(struct mailbox_req);
+   
+	buf	= std::make_shared<std::vector<char>>(data_len, 0);
+	if (buf == nullptr)
+		return -ENOMEM;
+    mb_req = reinterpret_cast<struct mailbox_req *>(buf->data());
+
+	mb_req->req = MAILBOX_REQ_MGMT_STATE;
+	if (online)
+		mb_conn.state_flags |= MB_STATE_ONLINE;
+	else
+		mb_conn.state_flags |= MB_STATE_OFFLINE;
+	memcpy(mb_req->data, &mb_conn, sizeof(mb_conn));
+
+	swmsg = std::make_shared<sw_msg>(mb_req, data_len, 0x1234, MB_REQ_FLAG_REQUEST);
+	if (swmsg == nullptr)
+		return -ENOMEM;
+
+	msg.localFd = fd;
+	msg.type = REMOTE_MSG;
+	msg.cb = nullptr;
+	msg.data = swmsg;
+
+	return handleMsg(dev, msg);	
+}
+
+
 // Client of MPD getting msg. Will quit on any error from either local mailbox or socket fd.
 // No retry is ever conducted.
 static void mpd_getMsg(size_t index, std::mutex *mtx,
@@ -128,16 +293,24 @@ static void mpd_getMsg(size_t index, std::mutex *mtx,
 	int msdfd = -1, mbxfd = -1;
 	int ret = 0;
 	std::string ip;
+	msgHandler cb = nullptr;
 	
 	pcieFunc dev(index);
-	
+
+	/*
+     * If there is user plugin, then we assume the users either don't want to
+	 * use the communication channel we setup by default, or they even don't
+	 * want to use the software mailbox at all. In this case, we interpret the
+	 * mailbox msg and process the msg with the hook function the plugin provides.
+     */	 
 	if (plugin_cbs.get_remote_msd_fd) {
-		ret = (*plugin_cbs.get_remote_msd_fd)(dev, msdfd);
+		ret = (*plugin_cbs.get_remote_msd_fd)(dev.getIndex(), msdfd);
 		if (ret) {
 			syslog(LOG_ERR, "failed to get remote fd in plugin");
 			quit = true;
 			return;
 		}
+		cb = local_msg_handler;
 	} else {
 		if (!dev.loadConf()) {
 			quit = true;
@@ -166,14 +339,18 @@ static void mpd_getMsg(size_t index, std::mutex *mtx,
 		return;
 	}
 
-	//notify mailbox driver the daemon is ready 
-	if (plugin_cbs.mb_notify)
-		(*plugin_cbs.mb_notify)(dev, mbxfd, true);
+	/*
+	 * notify mailbox driver the daemon is ready.
+	 * when mpd daemon is required, it will also notify mailbox driver when it
+	 * exits, which to the mailbox acts as if the mgmt is down. Then the card
+	 * will be marked not ready 
+	 */
+	mb_notify(dev, mbxfd, true);
 
 	struct queue_msg msg = {
 		.localFd = mbxfd,
 		.remoteFd = msdfd,
-		.cb = plugin_cbs.local_msg_handler,
+		.cb = cb,
 		.data = nullptr,
 	};
 	for ( ;; ) {
@@ -213,8 +390,7 @@ static void mpd_getMsg(size_t index, std::mutex *mtx,
 	(*cv).notify_all();
 
 	//notify mailbox driver the daemon is offline 
-	if (plugin_cbs.mb_notify)
-		(*plugin_cbs.mb_notify)(dev, mbxfd, false);
+	mb_notify(dev, mbxfd, false);
 
 	if (msdfd > 0)	 
 		close(msdfd);
