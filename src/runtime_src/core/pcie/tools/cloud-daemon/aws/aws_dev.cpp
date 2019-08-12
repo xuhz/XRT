@@ -117,7 +117,10 @@ int get_remote_msd_fd(size_t index, int& fd)
  */ 
 int xclLoadXclBin(size_t index, const axlf *&xclbin)
 {
-	return devices.at(index)->xclLoadXclBin(xclbin);
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclLoadXclBin(xclbin);
 }
 
 /*
@@ -136,7 +139,16 @@ int xclLoadXclBin(size_t index, const axlf *&xclbin)
 int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
 	   void *&resp, size_t &resp_len)
 {
-	return devices.at(index)->xclReadSubdevReq(subdev_req, resp, resp_len);
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	std::shared_ptr<struct xcl_hwicap> hwi;
+	int ret = d->xclReadSubdevReq(subdev_req, hwi, resp_len);
+	if (ret == 0) {
+			resp = reinterpret_cast<void *>(hwi.get());
+			return 0;
+	} else
+		return 1;
 }
 
 /*
@@ -152,7 +164,10 @@ int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
  */ 
 int xclLockDevice(size_t index)
 {
-	return devices.at(index)->xclLockDevice();
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclLockDevice();
 }
 
 /*
@@ -168,7 +183,10 @@ int xclLockDevice(size_t index)
  */ 
 int xclUnlockDevice(size_t index)
 {
-	return devices.at(index)->xclUnlockDevice();
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclUnlockDevice();
 }
 
 /*
@@ -184,7 +202,10 @@ int xclUnlockDevice(size_t index)
  */ 
 int xclResetDevice(size_t index)
 {
-	return devices.at(index)->xclResetDevice();
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclResetDevice();
 }
 
 /*
@@ -201,7 +222,10 @@ int xclResetDevice(size_t index)
  */ 
 int xclReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj)
 {
-	return devices.at(index)->xclReClock2(obj);
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclReClock2(obj);
 }
 
 int AwsDev::xclLoadXclBin(const xclBin *&buffer)
@@ -260,7 +284,8 @@ int AwsDev::xclLoadXclBin(const xclBin *&buffer)
 #endif
 }
 
-int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req, void *&resp, size_t &resp_sz)
+int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
+	   std::shared_ptr<struct xcl_hwicap> &resp, size_t &resp_sz)
 {
 	int ret = 0;
 	switch (subdev_req->kind) {
@@ -268,7 +293,7 @@ int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req, void *&res
 		resp_sz = sizeof(struct xcl_hwicap);
 		struct xcl_hwicap hwicap = {0};
 		get_hwicap(hwicap);
-		resp = std::make_shared<struct xcl_hwicap>(hwicap).get();
+		resp = std::make_shared<struct xcl_hwicap>(hwicap);
 		ret = 0;
 		break;
 	}

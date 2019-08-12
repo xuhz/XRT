@@ -25,10 +25,7 @@ target_link_libraries(baremetal_mpd_plugin
   boost_system
   pthread
   rt
+  crypto
   )
 
-install(TARGETS baremetal_mpd_plugin
-        LIBRARY
-        DESTINATION ${XRT_INSTALL_DIR}/lib
-		)
 endif (NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")

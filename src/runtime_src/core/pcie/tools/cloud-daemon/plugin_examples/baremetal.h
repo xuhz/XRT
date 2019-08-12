@@ -36,11 +36,15 @@ public:
 	int xclLoadXclBin(const xclBin *&buffer);
 	bool isGood();
 private:
+/*
+ * Internal data structures this sample plugin uses
+ */ 
 	std::shared_ptr<pcidev::pci_device> mgmtDev;
 	int retrieve_xclbin(const xclBin *&orig_xclbin,
 		   std::shared_ptr<std::vector<char>> &real_xclbin);
+	void calculate_md5(char *md5, char *buf, size_t len);
+	void read_file(const char *filename, std::shared_ptr<std::vector<char>> &sp);
 };
-
 
 int get_remote_msd_fd(size_t index, int& fd);
 int xclLoadXclBin(size_t index, const axlf *&xclbin);

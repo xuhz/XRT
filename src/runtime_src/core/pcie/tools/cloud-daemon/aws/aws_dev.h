@@ -48,7 +48,7 @@ public:
 	~AwsDev();
 
 	int xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
-		   void *&resp,
+		   std::shared_ptr<struct xcl_hwicap> &resp,
 		   size_t &resp_sz);
 	// Bitstreams
 	int xclLoadXclBin(const xclBin *&buffer);
