@@ -14,10 +14,6 @@ include_directories(
 file(GLOB AWS_PLUGIN_FILES
   "aws_dev.h"
   "aws_dev.cpp"
-  "mpd_aws_plugin.cpp"
-  "../pciefunc.cpp"
-  "../sw_msg.cpp"
-  "../common.cpp"
   )
 
 add_library(aws_plugin OBJECT ${AWS_PLUGIN_FILES})

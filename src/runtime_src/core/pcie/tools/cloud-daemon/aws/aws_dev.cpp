@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/file.h>
+#include <syslog.h>
 
 #include <cstdio>
 #include <cstring>
@@ -33,9 +34,199 @@
 #include <iostream>
 #include <fstream>
 #include <uuid/uuid.h>
-#include "core/include/xclbin.h"
+#include "xclbin.h"
 #include "aws_dev.h"
 
+
+/*
+ * Functions each plugin needs to provide
+ */
+extern "C" {
+int init(mpd_plugin_callbacks *cbs);
+void fini(void *mpc_cookie);
+}
+
+std::vector<std::shared_ptr<AwsDev>> devices (8); //support maximum 8 FPGAs per server
+/*
+ * Init function of the plugin that is used to hook the required functions.
+ * The cookie is used by fini (see below). Can be NULL if not required.
+ */ 
+int init(mpd_plugin_callbacks *cbs)
+{
+	int ret = 1;
+	auto total = pcidev::get_dev_total();
+	if (total == 0) {
+		syslog(LOG_INFO, "aws: no device found");
+		return ret;
+	}
+    if (cbs) 
+	{
+		for (size_t i = 0; i < total; i++)
+			devices.at(i) = std::make_shared<AwsDev>(i, nullptr);
+		// hook functions
+		cbs->mpc_cookie = NULL;
+		cbs->get_remote_msd_fd = get_remote_msd_fd;
+		cbs->load_xclbin = xclLoadXclBin;
+		cbs->get_peer_data = xclReadSubdevReq;
+		cbs->lock_bitstream = xclLockDevice;
+		cbs->unlock_bitstream = xclUnlockDevice;
+		cbs->hot_reset = xclResetDevice;
+		cbs->reclock2 = xclReClock2;
+		ret = 0;
+	}
+    syslog(LOG_INFO, "aws mpd plugin init called: %d\n", ret);
+    return ret;
+}
+
+/*
+ * Fini function of the plugin
+ */ 
+void fini(void *mpc_cookie)
+{
+     syslog(LOG_INFO, "aws mpd plugin fini called\n");
+}
+
+/*
+ * callback function that is used to setup communication channel
+ * aws doesn't need this, so just return -1 to the fd
+ * Input:
+ *		d: dbdf of the user PF
+ * Output:    
+ *		fd: socket handle of the communication channel
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int get_remote_msd_fd(size_t index, int& fd)
+{
+	fd = -1;
+	return 0;
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_LOAD_XCLBIN msg
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ *		xclbin: the aws xclbin file
+ * Output:   
+ *		none	
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclLoadXclBin(size_t index, const axlf *&xclbin)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclLoadXclBin(xclbin);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ *		subdev_req: the request mailbox msg of type 'struct mailbox_subdev_peer'
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
+	   void *&resp, size_t &resp_len)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	std::shared_ptr<struct xcl_hwicap> hwi;
+	int ret = d->xclReadSubdevReq(subdev_req, hwi, resp_len);
+	if (ret == 0) {
+			resp = reinterpret_cast<void *>(hwi.get());
+			return 0;
+	} else
+		return 1;
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_LOCK_BITSTREAM msg 
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		none	
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclLockDevice(size_t index)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclLockDevice();
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_UNLOCK_BITSTREAM msg
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		none	
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclUnlockDevice(size_t index)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclUnlockDevice();
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_HOT_RESET msg
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		none	
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclResetDevice(size_t index)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclResetDevice();
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_RECLOCK msg
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ *		obj: the mailbox req msg of type 'struct xclmgmt_ioc_freqscaling'
+ * Output:   
+ *		none	
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int xclReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj)
+{
+	auto d = devices.at(index);
+	if (!d->isGood())
+		return 1;
+	return d->xclReClock2(obj);
+}
 
 int AwsDev::xclLoadXclBin(const xclBin *&buffer)
 {
@@ -93,7 +284,8 @@ int AwsDev::xclLoadXclBin(const xclBin *&buffer)
 #endif
 }
 
-int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req, void *&resp, size_t &resp_sz)
+int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
+	   std::shared_ptr<struct xcl_hwicap> &resp, size_t &resp_sz)
 {
 	int ret = 0;
 	switch (subdev_req->kind) {
@@ -101,7 +293,7 @@ int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req, void *&res
 		resp_sz = sizeof(struct xcl_hwicap);
 		struct xcl_hwicap hwicap = {0};
 		get_hwicap(hwicap);
-		resp = std::make_shared<struct xcl_hwicap>(hwicap).get();
+		resp = std::make_shared<struct xcl_hwicap>(hwicap);
 		ret = 0;
 		break;
 	}
@@ -119,7 +311,13 @@ int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req, void *&res
 }
 
 bool AwsDev::isGood() {
-	return (mDev != nullptr);
+#ifdef INTERNAL_TESTING_FOR_AWS
+	if (mMgtHandle < 0) {
+	    std::cout << "AwsDev: Bad handle. No mgmtPF Handle" << std::endl;
+	    return false;
+	}
+#endif	
+	return true;
 }
 
 bool AwsDev::xclLockDevice()
@@ -163,7 +361,7 @@ AwsDev::~AwsDev()
 	}
 }
 
-AwsDev::AwsDev(pcieFunc& dev, const char *logfileName) : mBoardNumber(dev.getIndex()), mLocked(false)
+AwsDev::AwsDev(size_t index, const char *logfileName) : mBoardNumber(index), mLocked(false)
 {
 	if (logfileName != nullptr) {
 		mLogStream.open(logfileName);
@@ -182,7 +380,6 @@ AwsDev::AwsDev(pcieFunc& dev, const char *logfileName) : mBoardNumber(dev.getInd
 		std::cout << "Cannot open /dev/awsmgmt" << mBoardNumber << std::endl;
 #else
 	loadDefaultAfiIfCleared();
-	mDev = dev.getDev();
 	//bar0 is mapped already. seems other 2 bars are not required.
 #endif
 }

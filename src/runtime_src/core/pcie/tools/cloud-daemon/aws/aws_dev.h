@@ -22,9 +22,7 @@
 #include "xclhal2.h"
 #include "core/pcie/driver/linux/include/mailbox_proto.h"
 #include "core/pcie/driver/linux/include/mgmt-ioctl.h"
-#include "../pciefunc.h"
-#include "../sw_msg.h"
-#include "../common.h"
+#include "core/pcie/linux/scan.h"
 #include "../mpd_plugin.h"
 
 #ifdef INTERNAL_TESTING_FOR_AWS
@@ -46,11 +44,11 @@
 class AwsDev
 {
 public:
-	AwsDev(pcieFunc& dev, const char *logfileName);
+	AwsDev(size_t index, const char *logfileName);
 	~AwsDev();
 
 	int xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
-		   void *&resp,
+		   std::shared_ptr<struct xcl_hwicap> &resp,
 		   size_t &resp_sz);
 	// Bitstreams
 	int xclLoadXclBin(const xclBin *&buffer);
@@ -61,7 +59,6 @@ public:
 	bool xclUnlockDevice();
 	bool isGood();
 private:
-	std::shared_ptr<pcidev::pci_device> mDev;
 	const int mBoardNumber;
 	bool mLocked;
 	std::ofstream mLogStream;
@@ -75,4 +72,14 @@ private:
 #endif
 	void get_hwicap(struct xcl_hwicap &hwicap);
 };
+
+
+int get_remote_msd_fd(size_t index, int& fd);
+int xclLoadXclBin(size_t index, const axlf *&xclbin);
+int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
+	   void *&resp, size_t &resp_len);
+int xclLockDevice(size_t index);
+int xclUnlockDevice(size_t index);
+int xclResetDevice(size_t index);
+int xclReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj);
 #endif

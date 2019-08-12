@@ -20,16 +20,28 @@
 #ifndef	MPD_PLUGIN_H
 #define	MPD_PLUGIN_H
 
-typedef int (*mb_msg_handler_fn)(pcieFunc& dev, std::shared_ptr<sw_msg>& orig,
-    std::shared_ptr<sw_msg>& processed);
-typedef int (*get_remote_msd_fd_fn)(pcieFunc& dev, int &fd);
-typedef int (*mb_notify_fn)(pcieFunc& dev, int &fd, bool online);
+#include "xclbin.h"
+
+typedef int (*get_remote_msd_fd_fn)(size_t index, int &fd);
+typedef int (*load_xclbin_fn)(size_t index, const axlf *&buf);
+typedef int (*get_peer_data_fn)(size_t index,
+	   struct mailbox_subdev_peer *&subdev_req,
+	   void *&resp, size_t &resp_len);
+typedef int (*lock_bitstream_fn)(size_t index);
+typedef int (*unlock_bitstream_fn)(size_t index);
+typedef int (*hot_reset_fn)(size_t index);
+typedef int (*reclock2_fn)(size_t index, struct xclmgmt_ioc_freqscaling *&obj);
+
 
 struct mpd_plugin_callbacks {
 	void *mpc_cookie;
     get_remote_msd_fd_fn get_remote_msd_fd;
-	mb_msg_handler_fn local_msg_handler;
-	mb_notify_fn mb_notify;
+	load_xclbin_fn load_xclbin;
+	get_peer_data_fn get_peer_data;
+	lock_bitstream_fn lock_bitstream;
+	unlock_bitstream_fn unlock_bitstream;
+	hot_reset_fn hot_reset;
+	reclock2_fn reclock2;
 };
 
 #define INIT_FN_NAME    "init"
