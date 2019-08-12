@@ -50,7 +50,7 @@ void *plugin_handle;
 init_fn plugin_init;
 fini_fn plugin_fini;
 struct msd_plugin_callbacks plugin_cbs;
-static const std::string plugin_path("/lib/firmware/xilinx/msd_plugin.so");
+static const std::string plugin_path("/opt/xilinx/xrt/lib/libmsd_plugin.so");
 
 // Init plugin callbacks
 static void init_plugin()
