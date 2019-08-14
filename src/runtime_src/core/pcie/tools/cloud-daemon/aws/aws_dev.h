@@ -47,16 +47,27 @@ public:
 	AwsDev(size_t index, const char *logfileName);
 	~AwsDev();
 
-	int xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
-		   std::shared_ptr<struct xcl_hwicap> &resp,
-		   size_t &resp_sz);
+	int awsGetIcap(std::shared_ptr<struct xcl_hwicap> &resp,
+	   size_t &resp_len);
+	int awsGetSensor(std::shared_ptr<struct xcl_sensor> &resp,
+	   size_t &resp_len);
+	int awsGetMgmt(std::shared_ptr<struct xcl_common> &resp,
+	   size_t &resp_len);
+	int awsGetMig(std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+	int awsGetFirewall(std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+	int awsGetDna(std::shared_ptr<struct xcl_dna> &resp,
+	   size_t &resp_len);
+	int awsGetSubdev(std::shared_ptr<void> &resp,
+	   size_t &resp_len);
 	// Bitstreams
-	int xclLoadXclBin(const xclBin *&buffer);
+	int awsLoadXclBin(const xclBin *&buffer);
 	//int xclBootFPGA();
-	int xclResetDevice();
-	int xclReClock2(xclmgmt_ioc_freqscaling *&obj);
-	bool xclLockDevice();
-	bool xclUnlockDevice();
+	int awsResetDevice();
+	int awsReClock2(xclmgmt_ioc_freqscaling *&obj);
+	bool awsLockDevice();
+	bool awsUnlockDevice();
 	bool isGood();
 private:
 	const int mBoardNumber;
@@ -70,16 +81,34 @@ private:
 	int loadDefaultAfiIfCleared( void );
 	char* get_afi_from_axlf(const axlf * buffer);
 #endif
-	void get_hwicap(struct xcl_hwicap &hwicap);
 };
 
 
 int get_remote_msd_fd(size_t index, int& fd);
-int xclLoadXclBin(size_t index, const axlf *&xclbin);
-int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
-	   void *&resp, size_t &resp_len);
-int xclLockDevice(size_t index);
-int xclUnlockDevice(size_t index);
-int xclResetDevice(size_t index);
-int xclReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj);
+int awsLoadXclBin(size_t index, const axlf *&xclbin);
+int awsGetIcap(size_t index,
+	   std::shared_ptr<struct xcl_hwicap> &resp,
+	   size_t &resp_len);
+int awsGetSensor(size_t index,
+	   std::shared_ptr<struct xcl_sensor> &resp,
+	   size_t &resp_len);
+int awsGetMgmt(size_t index,
+	   std::shared_ptr<struct xcl_common> &resp,
+	   size_t &resp_len);
+int awsGetMig(size_t index,
+	   std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+int awsGetFirewall(size_t index,
+	   std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+int awsGetDna(size_t index,
+	   std::shared_ptr<struct xcl_dna> &resp,
+	   size_t &resp_len);
+int awsGetSubdev(size_t index,
+	   std::shared_ptr<void> &resp,
+	   size_t &resp_len);
+int awsLockDevice(size_t index);
+int awsUnlockDevice(size_t index);
+int awsResetDevice(size_t index);
+int awsReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj);
 #endif

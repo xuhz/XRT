@@ -66,12 +66,18 @@ int init(mpd_plugin_callbacks *cbs)
 		// hook functions
 		cbs->mpc_cookie = NULL;
 		cbs->get_remote_msd_fd = get_remote_msd_fd;
-		cbs->load_xclbin = xclLoadXclBin;
-		cbs->get_peer_data = xclReadSubdevReq;
-		cbs->lock_bitstream = xclLockDevice;
-		cbs->unlock_bitstream = xclUnlockDevice;
-		cbs->hot_reset = xclResetDevice;
-		cbs->reclock2 = xclReClock2;
+		cbs->load_xclbin = awsLoadXclBin;
+		cbs->get_icap_data = awsGetIcap;
+		cbs->get_sensor_data = awsGetSensor;
+		cbs->get_mgmt_data = awsGetMgmt;
+		cbs->get_mig_data = awsGetMig;
+		cbs->get_firewall_data = awsGetFirewall;
+		cbs->get_dna_data = awsGetDna;
+		cbs->get_subdev_data = awsGetSubdev;
+		cbs->lock_bitstream = awsLockDevice;
+		cbs->unlock_bitstream = awsUnlockDevice;
+		cbs->hot_reset = awsResetDevice;
+		cbs->reclock2 = awsReClock2;
 		ret = 0;
 	}
     syslog(LOG_INFO, "aws mpd plugin init called: %d\n", ret);
@@ -108,27 +114,27 @@ int get_remote_msd_fd(size_t index, int& fd)
  * 
  * Input:
  *		index: index of the FPGA device
- *		xclbin: the aws xclbin file
+ *		awsbin: the aws xclbin file
  * Output:   
  *		none	
  * Return value:
  *		0: success
  *		1: failure
  */ 
-int xclLoadXclBin(size_t index, const axlf *&xclbin)
+int awsLoadXclBin(size_t index, const axlf *&xclbin)
 {
 	auto d = devices.at(index);
 	if (!d->isGood())
 		return 1;
-	return d->xclLoadXclBin(xclbin);
+	return d->awsLoadXclBin(xclbin);
 }
 
 /*
  * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind ICAP
  * 
  * Input:
  *		index: index of the FPGA device
- *		subdev_req: the request mailbox msg of type 'struct mailbox_subdev_peer'
  * Output:   
  *		resp: response msg
  *		resp_len: length of response msg 
@@ -136,19 +142,145 @@ int xclLoadXclBin(size_t index, const axlf *&xclbin)
  *		0: success
  *		1: failure
  */ 
-int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
-	   void *&resp, size_t &resp_len)
+int awsGetIcap(size_t index, std::shared_ptr<struct xcl_hwicap> &resp,
+	   size_t &resp_len)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
-	std::shared_ptr<struct xcl_hwicap> hwi;
-	int ret = d->xclReadSubdevReq(subdev_req, hwi, resp_len);
-	if (ret == 0) {
-			resp = reinterpret_cast<void *>(hwi.get());
-			return 0;
-	} else
+	return d->awsGetIcap(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind SENSOR
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetSensor(size_t index, std::shared_ptr<struct xcl_sensor> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
 		return 1;
+	return d->awsGetSensor(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind MGMT
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetMgmt(size_t index, std::shared_ptr<struct xcl_common> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
+		return 1;
+	return d->awsGetMgmt(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind MIG_ECC
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetMig(size_t index, std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
+		return 1;
+	return d->awsGetMig(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind FIREWALL
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetFirewall(size_t index, std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
+		return 1;
+	return d->awsGetFirewall(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind DNA
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetDna(size_t index, std::shared_ptr<struct xcl_dna> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
+		return 1;
+	return d->awsGetDna(resp, resp_len);
+}
+
+/*
+ * callback function that is used to handle MAILBOX_REQ_PEER_DATA msg
+ * kind SUBDEV
+ * 
+ * Input:
+ *		index: index of the FPGA device
+ * Output:   
+ *		resp: response msg
+ *		resp_len: length of response msg 
+ * Return value:
+ *		0: success
+ *		1: failure
+ */ 
+int awsGetSubdev(size_t index, std::shared_ptr<void> &resp,
+	   size_t &resp_len)
+{
+	auto d = std::make_unique<AwsDev>(index, nullptr);
+	if (!d->isGood())
+		return 1;
+	return d->awsGetSubdev(resp, resp_len);
 }
 
 /*
@@ -162,12 +294,12 @@ int xclReadSubdevReq(size_t index, struct mailbox_subdev_peer *&subdev_req,
  *		0: success
  *		1: failure
  */ 
-int xclLockDevice(size_t index)
+int awsLockDevice(size_t index)
 {
 	auto d = devices.at(index);
 	if (!d->isGood())
 		return 1;
-	return d->xclLockDevice();
+	return d->awsLockDevice();
 }
 
 /*
@@ -181,12 +313,12 @@ int xclLockDevice(size_t index)
  *		0: success
  *		1: failure
  */ 
-int xclUnlockDevice(size_t index)
+int awsUnlockDevice(size_t index)
 {
 	auto d = devices.at(index);
 	if (!d->isGood())
 		return 1;
-	return d->xclUnlockDevice();
+	return d->awsUnlockDevice();
 }
 
 /*
@@ -200,12 +332,12 @@ int xclUnlockDevice(size_t index)
  *		0: success
  *		1: failure
  */ 
-int xclResetDevice(size_t index)
+int awsResetDevice(size_t index)
 {
 	auto d = devices.at(index);
 	if (!d->isGood())
 		return 1;
-	return d->xclResetDevice();
+	return d->awsResetDevice();
 }
 
 /*
@@ -220,15 +352,15 @@ int xclResetDevice(size_t index)
  *		0: success
  *		1: failure
  */ 
-int xclReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj)
+int awsReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj)
 {
 	auto d = devices.at(index);
 	if (!d->isGood())
 		return 1;
-	return d->xclReClock2(obj);
+	return d->awsReClock2(obj);
 }
 
-int AwsDev::xclLoadXclBin(const xclBin *&buffer)
+int AwsDev::awsLoadXclBin(const xclBin *&buffer)
 {
 	char *xclbininmemory = reinterpret_cast<char*> (const_cast<xclBin*> (buffer));
 	
@@ -284,30 +416,84 @@ int AwsDev::xclLoadXclBin(const xclBin *&buffer)
 #endif
 }
 
-int AwsDev::xclReadSubdevReq(struct mailbox_subdev_peer *&subdev_req,
-	   std::shared_ptr<struct xcl_hwicap> &resp, size_t &resp_sz)
+int AwsDev::awsGetIcap(std::shared_ptr<struct xcl_hwicap> &hwicap, size_t &resp_sz)
 {
-	int ret = 0;
-	switch (subdev_req->kind) {
-	case ICAP: {
-		resp_sz = sizeof(struct xcl_hwicap);
-		struct xcl_hwicap hwicap = {0};
-		get_hwicap(hwicap);
-		resp = std::make_shared<struct xcl_hwicap>(hwicap);
-		ret = 0;
-		break;
-	}
-	case SENSOR:
-	case MGMT:
-	case MIG_ECC:
-	case FIREWALL:
-	case DNA:
-	case SUBDEV:
-	default:
-		ret = 1;	   
-		break;
-	}
-	return ret;
+	resp_sz = sizeof(struct xcl_hwicap);
+	struct xcl_hwicap data = {0};
+#define FIELD(var, field, index) (var.field##_##index)
+#ifdef INTERNAL_TESTING_FOR_AWS
+	xclmgmt_ioc_info mgmt_info_obj;
+    int ret = ioctl(mMgtHandle, XCLMGMT_IOCINFO, &mgmt_info_obj);
+    if (ret)
+   		return -EFAULT;
+	FIELD(data, freq, 0) = mgmt_info_obj.ocl_frequency[0];
+	FIELD(data, freq, 1) = mgmt_info_obj.ocl_frequency[1];
+	FIELD(data, freq, 2) = mgmt_info_obj.ocl_frequency[2];
+	FIELD(data, freq, 3) = mgmt_info_obj.ocl_frequency[3];
+	FIELD(data, freq_cntr, 0) = mgmt_info_obj.ocl_frequency[0] * 1000;
+	FIELD(data, freq_cntr, 1) = mgmt_info_obj.ocl_frequency[1] * 1000;
+	FIELD(data, freq_cntr, 2) = mgmt_info_obj.ocl_frequency[2] * 1000;
+	FIELD(data, freq_cntr, 3) = mgmt_info_obj.ocl_frequency[3] * 1000;
+#else
+	fpga_mgmt_image_info imageInfo;
+    fpga_mgmt_describe_local_image( mBoardNumber, &imageInfo, 0 );
+	FIELD(data, freq, 0) = imageInfo.metrics.clocks[0].frequency[0] / 1000000;
+	FIELD(data, freq, 1) = imageInfo.metrics.clocks[1].frequency[0] / 1000000;
+	FIELD(data, freq, 2) = imageInfo.metrics.clocks[2].frequency[0] / 1000000;
+	FIELD(data, freq_cntr, 0) = imageInfo.metrics.clocks[0].frequency[0] / 1000;
+	FIELD(data, freq_cntr, 1) = imageInfo.metrics.clocks[1].frequency[0] / 1000;
+	FIELD(data, freq_cntr, 2) = imageInfo.metrics.clocks[2].frequency[0] / 1000;
+#endif
+	//do we need to save uuid of xclbin loaded so that we can return xclbin uuid here?
+	//seems not. we check afi before load new xclbin.
+	
+	hwicap = std::make_shared<struct xcl_hwicap>(data);
+	return 0;
+}
+
+int AwsDev::awsGetSensor(std::shared_ptr<struct xcl_sensor> &sensor, size_t &resp_sz)
+{
+	resp_sz = sizeof(struct xcl_sensor);
+	struct xcl_sensor data = {0};
+	sensor = std::make_shared<struct xcl_sensor>(data);
+	return -ENOTSUP;
+}
+
+int AwsDev::awsGetMgmt(std::shared_ptr<struct xcl_common> &common, size_t &resp_sz)
+{
+	resp_sz = sizeof(struct xcl_common);
+	struct xcl_common data = {0};
+	common = std::make_shared<struct xcl_common>(data);
+	return -ENOTSUP;
+}
+
+int AwsDev::awsGetMig(std::shared_ptr<struct xcl_mig_ecc> &mig, size_t &resp_sz)
+{
+	resp_sz = sizeof(struct xcl_mig_ecc);
+	struct xcl_mig_ecc data = {0};
+	mig = std::make_shared<struct xcl_mig_ecc>(data);
+	return -ENOTSUP;
+}
+
+int AwsDev::awsGetFirewall(std::shared_ptr<struct xcl_mig_ecc> &firewall, size_t &resp_sz)
+{
+	resp_sz = sizeof(struct xcl_mig_ecc);
+	struct xcl_mig_ecc data = {0};
+	firewall = std::make_shared<struct xcl_mig_ecc>(data);
+	return -ENOTSUP;
+}
+
+int AwsDev::awsGetDna(std::shared_ptr<struct xcl_dna> &dna, size_t &resp_sz)
+{
+	resp_sz = sizeof(struct xcl_dna);
+	struct xcl_dna data = {0};
+	dna = std::make_shared<struct xcl_dna>(data);
+	return -ENOTSUP;
+}
+
+int AwsDev::awsGetSubdev(std::shared_ptr<void> &subdev, size_t &resp_sz)
+{
+	return -ENOTSUP;
 }
 
 bool AwsDev::isGood() {
@@ -320,26 +506,26 @@ bool AwsDev::isGood() {
 	return true;
 }
 
-bool AwsDev::xclLockDevice()
+bool AwsDev::awsLockDevice()
 {
 	// AWS FIXME - add lockDevice
 	mLocked = true;
 	return true;
 }
 
-bool AwsDev::xclUnlockDevice()
+bool AwsDev::awsUnlockDevice()
 {
 	// AWS FIXME - add unlockDevice
 	mLocked = false;
 	return true;
 }
 
-int AwsDev::xclResetDevice() {
+int AwsDev::awsResetDevice() {
 	// AWS FIXME - add reset
 	return 0;
 }
 
-int AwsDev::xclReClock2(xclmgmt_ioc_freqscaling *&obj) {
+int AwsDev::awsReClock2(xclmgmt_ioc_freqscaling *&obj) {
 #ifdef INTERNAL_TESTING_FOR_AWS
 	return ioctl(mMgtHandle, XCLMGMT_IOCFREQSCALE, obj);
 #else
@@ -477,33 +663,3 @@ char *AwsDev::get_afi_from_axlf(const axlf *buffer)
     return afid;
 }
 #endif
-
-void AwsDev::get_hwicap(struct xcl_hwicap &hwicap)
-{
-#define FIELD(var, field, index) (var.field##_##index)
-#ifdef INTERNAL_TESTING_FOR_AWS
-	xclmgmt_ioc_info mgmt_info_obj;
-    int ret = ioctl(mMgtHandle, XCLMGMT_IOCINFO, &mgmt_info_obj);
-    if (ret)
-   		return;
-	FIELD(hwicap, freq, 0) = mgmt_info_obj.ocl_frequency[0];
-	FIELD(hwicap, freq, 1) = mgmt_info_obj.ocl_frequency[1];
-	FIELD(hwicap, freq, 2) = mgmt_info_obj.ocl_frequency[2];
-	FIELD(hwicap, freq, 3) = mgmt_info_obj.ocl_frequency[3];
-	FIELD(hwicap, freq_cntr, 0) = mgmt_info_obj.ocl_frequency[0] * 1000;
-	FIELD(hwicap, freq_cntr, 1) = mgmt_info_obj.ocl_frequency[1] * 1000;
-	FIELD(hwicap, freq_cntr, 2) = mgmt_info_obj.ocl_frequency[2] * 1000;
-	FIELD(hwicap, freq_cntr, 3) = mgmt_info_obj.ocl_frequency[3] * 1000;
-#else
-	fpga_mgmt_image_info imageInfo;
-    fpga_mgmt_describe_local_image( mBoardNumber, &imageInfo, 0 );
-	FIELD(hwicap, freq, 0) = imageInfo.metrics.clocks[0].frequency[0] / 1000000;
-	FIELD(hwicap, freq, 1) = imageInfo.metrics.clocks[1].frequency[0] / 1000000;
-	FIELD(hwicap, freq, 2) = imageInfo.metrics.clocks[2].frequency[0] / 1000000;
-	FIELD(hwicap, freq_cntr, 0) = imageInfo.metrics.clocks[0].frequency[0] / 1000;
-	FIELD(hwicap, freq_cntr, 1) = imageInfo.metrics.clocks[1].frequency[0] / 1000;
-	FIELD(hwicap, freq_cntr, 2) = imageInfo.metrics.clocks[2].frequency[0] / 1000;
-#endif
-	//do we need to save uuid of xclbin loaded so that we can return xclbin uuid here?
-	//seems not. we check afi before load new xclbin.
-}

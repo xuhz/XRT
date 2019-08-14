@@ -162,16 +162,93 @@ int local_msg_handler(pcieFunc& dev, std::shared_ptr<sw_msg>& orig,
 		struct mailbox_subdev_peer *subdev_req =
 			reinterpret_cast<struct mailbox_subdev_peer *>(req->data);
 		if (reqSize < sizeof(*subdev_req)) {
-	        dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
-	        ret = -EINVAL;
-	        break;
+	    	dev.log(LOG_ERR, "local request(%d) dropped, wrong size", req->req);
+	    	ret = -EINVAL;
+	    	break;
 		}
-	    if (!plugin_cbs.get_peer_data) {
-        	ret = -ENOTSUP;
+		switch (subdev_req->kind) {
+		case ICAP: {
+	    	if (!plugin_cbs.get_icap_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_hwicap> data;
+			ret = (*plugin_cbs.get_icap_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
 			break;
 		}
-		ret = (*plugin_cbs.get_peer_data)(dev.getIndex(),
-			   subdev_req, resp, resp_len);
+		case SENSOR: {
+	    	if (!plugin_cbs.get_sensor_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_sensor> data;
+			ret = (*plugin_cbs.get_sensor_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		case MGMT: {
+	    	if (!plugin_cbs.get_mgmt_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_common> data;
+			ret = (*plugin_cbs.get_mgmt_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		case MIG_ECC: {
+	    	if (!plugin_cbs.get_mig_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_mig_ecc> data;
+			ret = (*plugin_cbs.get_mig_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		case FIREWALL: {
+	    	if (!plugin_cbs.get_firewall_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_mig_ecc> data;
+			ret = (*plugin_cbs.get_firewall_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		case DNA: {
+	    	if (!plugin_cbs.get_dna_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<struct xcl_dna> data;
+			ret = (*plugin_cbs.get_dna_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		case SUBDEV: {
+	    	if (!plugin_cbs.get_subdev_data) {
+        		ret = -ENOTSUP;
+				break;
+			}
+			std::shared_ptr<void> data;
+			ret = (*plugin_cbs.get_subdev_data)(dev.getIndex(),
+				data, resp_len);
+			resp = data.get();
+			break;
+		}
+		default:
+			ret = -ENOTSUP;	   
+			break;
+		}
+
 		if (!ret) {
 			processed = std::make_shared<sw_msg>(resp, resp_len, orig->id(),
 				   MB_REQ_FLAG_RESPONSE);
@@ -257,7 +334,7 @@ int mb_notify(pcieFunc &dev, int &fd, bool online)
 	struct mailbox_peer_state mb_conn = { 0 };
 	size_t data_len = sizeof(struct mailbox_peer_state) + sizeof(struct mailbox_req);
    
-	buf	= std::make_shared<std::vector<char>>(data_len, 0);
+	buf	= std::make_unique<std::vector<char>>(data_len, 0);
 	if (buf == nullptr)
 		return -ENOMEM;
     mb_req = reinterpret_cast<struct mailbox_req *>(buf->data());

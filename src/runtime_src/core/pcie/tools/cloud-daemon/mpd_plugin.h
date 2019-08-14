@@ -24,9 +24,27 @@
 
 typedef int (*get_remote_msd_fd_fn)(size_t index, int &fd);
 typedef int (*load_xclbin_fn)(size_t index, const axlf *&buf);
-typedef int (*get_peer_data_fn)(size_t index,
-	   struct mailbox_subdev_peer *&subdev_req,
-	   void *&resp, size_t &resp_len);
+typedef int (*get_icap_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_hwicap> &resp,
+	   size_t &resp_len);
+typedef int (*get_sensor_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_sensor> &resp,
+	   size_t &resp_len);
+typedef int (*get_mgmt_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_common> &resp,
+	   size_t &resp_len);
+typedef int (*get_mig_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+typedef int (*get_firewall_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_mig_ecc> &resp,
+	   size_t &resp_len);
+typedef int (*get_dna_data_fn)(size_t index,
+	   std::shared_ptr<struct xcl_dna> &resp,
+	   size_t &resp_len);
+typedef int (*get_subdev_data_fn)(size_t index,
+	   std::shared_ptr<void> &resp,
+	   size_t &resp_len);
 typedef int (*lock_bitstream_fn)(size_t index);
 typedef int (*unlock_bitstream_fn)(size_t index);
 typedef int (*hot_reset_fn)(size_t index);
@@ -37,7 +55,13 @@ struct mpd_plugin_callbacks {
 	void *mpc_cookie;
     get_remote_msd_fd_fn get_remote_msd_fd;
 	load_xclbin_fn load_xclbin;
-	get_peer_data_fn get_peer_data;
+	get_icap_data_fn get_icap_data;
+	get_sensor_data_fn get_sensor_data;
+	get_mgmt_data_fn get_mgmt_data;
+	get_mig_data_fn get_mig_data;
+	get_firewall_data_fn get_firewall_data;
+	get_dna_data_fn get_dna_data;
+	get_subdev_data_fn get_subdev_data;
 	lock_bitstream_fn lock_bitstream;
 	unlock_bitstream_fn unlock_bitstream;
 	hot_reset_fn hot_reset;
