@@ -46,7 +46,6 @@ int init(mpd_plugin_callbacks *cbs);
 void fini(void *mpc_cookie);
 }
 
-std::vector<std::shared_ptr<AwsDev>> devices (8); //support maximum 8 FPGAs per server
 /*
  * Init function of the plugin that is used to hook the required functions.
  * The cookie is used by fini (see below). Can be NULL if not required.
@@ -61,8 +60,6 @@ int init(mpd_plugin_callbacks *cbs)
 	}
     if (cbs) 
 	{
-		for (size_t i = 0; i < total; i++)
-			devices.at(i) = std::make_shared<AwsDev>(i, nullptr);
 		// hook functions
 		cbs->mpc_cookie = NULL;
 		cbs->get_remote_msd_fd = get_remote_msd_fd;
@@ -123,7 +120,7 @@ int get_remote_msd_fd(size_t index, int& fd)
  */ 
 int awsLoadXclBin(size_t index, const axlf *&xclbin)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
 	return d->awsLoadXclBin(xclbin);
@@ -296,7 +293,7 @@ int awsGetSubdev(size_t index, std::shared_ptr<void> &resp,
  */ 
 int awsLockDevice(size_t index)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
 	return d->awsLockDevice();
@@ -315,7 +312,7 @@ int awsLockDevice(size_t index)
  */ 
 int awsUnlockDevice(size_t index)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
 	return d->awsUnlockDevice();
@@ -334,7 +331,7 @@ int awsUnlockDevice(size_t index)
  */ 
 int awsResetDevice(size_t index)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
 	return d->awsResetDevice();
@@ -354,7 +351,7 @@ int awsResetDevice(size_t index)
  */ 
 int awsReClock2(size_t index, struct xclmgmt_ioc_freqscaling *&obj)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<AwsDev>(index, nullptr);
 	if (!d->isGood())
 		return 1;
 	return d->awsReClock2(obj);

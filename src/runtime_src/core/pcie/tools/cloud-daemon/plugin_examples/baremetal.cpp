@@ -46,7 +46,6 @@ int init(mpd_plugin_callbacks *cbs);
 void fini(void *mpc_cookie);
 }
 
-std::vector<std::shared_ptr<BareMetal>> devices (8); //support maximum 8 FPGAs per server
 /*
  * Init function of the plugin that is used to hook the required functions.
  * The cookie is used by fini (see below). Can be NULL if not required.
@@ -61,8 +60,6 @@ int init(mpd_plugin_callbacks *cbs)
 	}
     if (cbs) 
 	{
-		for (size_t i = 0; i < total; i++)
-			devices.at(i) = std::make_shared<BareMetal>(i);
 		// hook functions
 		cbs->mpc_cookie = NULL;
 		cbs->get_remote_msd_fd = get_remote_msd_fd;
@@ -113,7 +110,7 @@ int get_remote_msd_fd(size_t index, int& fd)
  */ 
 int xclLoadXclBin(size_t index, const axlf *&xclbin)
 {
-	auto d = devices.at(index);
+	auto d = std::make_unique<BareMetal>(index);
 	if (!d->isGood())
 		return 1;
 	return d->xclLoadXclBin(xclbin);
