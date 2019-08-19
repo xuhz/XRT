@@ -310,7 +310,7 @@ struct mailbox_clock_freqscaling {
 struct mailbox_req {
 	uint64_t flags;
 	enum mailbox_request req;
-	char data[0]; /* variable length of payload */
+	char data[1]; /* variable length of payload */
 };
 
 /**
@@ -330,7 +330,7 @@ struct sw_chan {
 	uint64_t sz;
 	uint64_t flags;
 	uint64_t id;
-	char data[0]; /* variable length of payload */
+	char data[1]; /* variable length of payload */
 };
 
 

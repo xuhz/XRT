@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Xilinx, Inc
+ * Partial Copyright (C) 2019 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -153,8 +153,8 @@ int AzureDev::azureLoadXclBin(const xclBin *&buffer)
 	size_t size = buffer->m_header.m_length;
 	std::cout << "xclbin file size: " << size << std::endl;
 
-	// Generate SHA250 for the kernel and
-    // separate in segments ready to upload
+	// Generate SHA256 for the kernel and
+	// separate in segments ready to upload
 	int res = Sha256AndSplit(std::string(xclbininmemory, size), chunks, imageSHA);
 	if (res) {
 		std::cout << "xclbin split failed!" << std::endl;
