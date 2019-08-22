@@ -47,7 +47,9 @@ struct queue_msg {
 	enum MSG_TYPE type;
 };
 
-int splitLine(std::string line, std::string& key, std::string& value);
+std::string str_trim(const std::string &str);
+int splitLine(std::string line, std::string& key, std::string& value,
+	   const std::string& delim = "=");
 sw_chan *allocmsg(pcieFunc& dev, size_t payloadSize);
 void freemsg(sw_chan *msg);
 size_t getSockMsgSize(pcieFunc& dev, int sockfd);

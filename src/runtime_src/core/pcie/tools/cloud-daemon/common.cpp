@@ -31,15 +31,23 @@
 #include "common.h"
 #include "sw_msg.h"
 
-/* Parse name value pair in format as "key=value". */
-int splitLine(std::string line, std::string& key, std::string& value)
+std::string str_trim(const std::string &str)
 {
-    auto pos = line.find('=', 0);
+	size_t first = str.find_first_not_of(" \t");
+	size_t last = str.find_last_not_of(" \n\t\t");
+
+	return str.substr(first, last-first+1);
+}
+/* Parse name value pair in format as "key=value". */
+int splitLine(std::string line, std::string& key,
+	   std::string& value, const std::string& delim)
+{
+    auto pos = line.find(delim, 0);
     if (pos == std::string::npos)
         return -EINVAL;
 
-    key = line.substr(0, pos);
-    value = line.substr(pos + 1);
+    key = str_trim(line.substr(0, pos));
+    value = str_trim(line.substr(pos + 1));
     return 0;
 }
 

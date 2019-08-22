@@ -7,6 +7,12 @@ include_directories(
 file(GLOB AZURE_PLUGIN_FILES
   "azure.h"
   "azure.cpp"
+  "../common.h"
+  "../common.cpp"
+  "../sw_msg.h"
+  "../sw_msg.cpp"
+  "../pciefunc.h"
+  "../pciefunc.cpp"
   )
 
 add_library(azure_plugin OBJECT ${AZURE_PLUGIN_FILES})

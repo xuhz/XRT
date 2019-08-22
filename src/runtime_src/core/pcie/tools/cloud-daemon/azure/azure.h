@@ -24,6 +24,7 @@
 #include "core/pcie/driver/linux/include/mgmt-ioctl.h"
 #include "core/pcie/linux/scan.h"
 #include "core/pcie/driver/linux/include/xocl_ioctl.h"
+#include "../common.h"
 #include "../mpd_plugin.h"
 
 class AzureDev
@@ -47,10 +48,15 @@ public:
 		}
 		
 		for (std::string line; std::getline(cfile, line);) {
-			line.erase(line.find_last_not_of(" \n\t\r") + 1);
-			if (regex_match(line, ip)) {
+			std::string key, value;
+			if (splitLine(line, key, value) != 0) {
 				cfile.close();
-				return line;
+				return "";
+			}
+			if (key.compare("restip") == 0 &&
+				regex_match(value, ip)) {
+				cfile.close();
+				return value;
 			}
 		}
 		
@@ -60,6 +66,7 @@ public:
 private:
 	// 4 MB buffer to truncate and send
 	static const int TRANSFER_SEGMENT_SIZE { 1024 * 4096 };
+	static const int REIMAGE_TIMEOUT { 5 }; //in second
 	std::shared_ptr<pcidev::pci_device> dev;
 	int UploadToWireServer(
 		std::string ip,
@@ -78,9 +85,6 @@ private:
 	   	std::vector<std::string> &output,
 	   	std::string &sha);
 	void get_fpga_serialNo(std::string &fpgaSerialNo);
-	std::string str_trim(std::string &str);
-	std::vector<std::string> str_split(const std::string &str,
-		   const std::string &delim);
 };
 
 

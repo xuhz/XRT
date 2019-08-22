@@ -180,18 +180,17 @@ int AzureDev::azureLoadXclBin(const xclBin *&buffer)
 
 	//start the re-image process
 	std::string delim = ":";
-	std::string ret = REST_Get(
+	std::string ret, key, value;
+	ret	= REST_Get(
 		RESTIP_ENDPOINT,
 		"/machine/plugins/?comp=FpgaController&type=StartReimaging",
 		fpgaSerialNumber
 	);
-	std::vector<std::string> status = str_split(ret, delim);
-	if (status.size() != 2 || status.at(0).compare("StartReimaging") != 0 ||
-		status.at(1).compare("0") != 0) {
-		std::cout << "reimaging failed" << std::endl;
+	if (splitLine(ret, key, value, delim) != 0 ||
+		key.compare("StartReimaging") != 0 ||
+		value.compare("0") != 0)
 		return -EFAULT;
-	}
-	
+
 	//check the re-image status
 	int wait = 0;
 	do {
@@ -200,21 +199,19 @@ int AzureDev::azureLoadXclBin(const xclBin *&buffer)
 			"/machine/plugins/?comp=FpgaController&type=GetReimagingStatus",
 			fpgaSerialNumber
 		);
-		status.clear();
-		status = str_split(ret, delim);
-		if (status.size() != 2 || status.at(0).compare("GetReimagingStatus") != 0) {
-			std::cout << "reimaging return status: " << status.at(1) << std::endl;
+		if (splitLine(ret, key, value, delim) != 0 ||
+			key.compare("GetReimagingStatus") != 0)
 			return -EFAULT;
-		}
-		if (status.at(1).compare("3") != 0) {
+
+		if (value.compare("3") != 0) {
 			sleep(1);
 			wait++;
 			continue;
 		} else {
-			std::cout << "reimaging return status: " << status.at(1) << " within " << wait << "s" << std::endl;
+			std::cout << "reimaging return status: " << value << " within " << wait << "s" << std::endl;
 			return 0;
 		}
-	} while (wait < 5);
+	} while (wait < REIMAGE_TIMEOUT);
 	
 	return -ETIMEDOUT;
 }
@@ -384,30 +381,4 @@ void AzureDev::get_fpga_serialNo(std::string &fpgaSerialNo)
 	std::string errmsg;
 	dev->sysfs_get("xmc", "serial_num", errmsg, fpgaSerialNo);
 	//fpgaSerialNo = "1281002AT024";
-}
-
-std::string AzureDev::str_trim(std::string &str)
-{
-	size_t first = str.find_first_not_of(' ');
-	size_t last = str.find_last_not_of(' ');
-
-	return str.substr(first, last-first+1);
-}
-
-std::vector<std::string> AzureDev::str_split(const std::string &str, const std::string &delim)
-{
-	std::vector<std::string> ret;
-	size_t prev = 0, pos = 0;
-
-	do {
-		pos = str.find(delim, prev);
-		if (pos == std::string::npos)
-		        pos = str.size();
-		std::string elem = str.substr(prev, pos-prev);
-		if (!elem.empty())
-		        ret.push_back(str_trim(elem));
-		prev = pos + delim.size();
-	} while (pos < str.size() && prev < str.size());
-
-	return ret;
 }
