@@ -69,7 +69,7 @@ private:
 		int index,
 		int total,
 		std::string hash);
-	int StartReimage(
+	std::string REST_Get(
 		std::string ip,
 		std::string endpoint,
 		std::string target);
@@ -78,6 +78,9 @@ private:
 	   	std::vector<std::string> &output,
 	   	std::string &sha);
 	void get_fpga_serialNo(std::string &fpgaSerialNo);
+	std::string str_trim(std::string &str);
+	std::vector<std::string> str_split(const std::string &str,
+		   const std::string &delim);
 };
 
 

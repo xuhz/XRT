@@ -86,6 +86,7 @@ RH_LIST=(\
      strace \
      unzip \
      zlib-static \
+     curl-devel \
 )
 
 UB_LIST=(\
@@ -131,6 +132,7 @@ UB_LIST=(\
      strace \
      unzip \
      uuid-dev \
+     libcurl4-openssl-dev \
 )
 
 if [[ $docker == 0 ]]; then

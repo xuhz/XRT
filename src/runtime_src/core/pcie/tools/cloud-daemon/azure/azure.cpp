@@ -160,6 +160,7 @@ int AzureDev::azureLoadXclBin(const xclBin *&buffer)
 		std::cout << "xclbin split failed!" << std::endl;
 		return -EFAULT;
 	}
+	std::cout << "xclbin file sha256: " << imageSHA << std::endl;
 
 	for (std::vector<std::string>::iterator it = chunks.begin(); it != chunks.end(); it++)
 	{
@@ -178,14 +179,44 @@ int AzureDev::azureLoadXclBin(const xclBin *&buffer)
 	}
 
 	//start the re-image process
-	std::cout << "Reconfiguring FPGA " << fpgaSerialNumber << std::endl;
-	StartReimage(
+	std::string delim = ":";
+	std::string ret = REST_Get(
 		RESTIP_ENDPOINT,
 		"/machine/plugins/?comp=FpgaController&type=StartReimaging",
 		fpgaSerialNumber
 	);
-
-	return 0;
+	std::vector<std::string> status = str_split(ret, delim);
+	if (status.size() != 2 || status.at(0).compare("StartReimaging") != 0 ||
+		status.at(1).compare("0") != 0) {
+		std::cout << "reimaging failed" << std::endl;
+		return -EFAULT;
+	}
+	
+	//check the re-image status
+	int wait = 0;
+	do {
+		ret = REST_Get(
+			RESTIP_ENDPOINT,
+			"/machine/plugins/?comp=FpgaController&type=GetReimagingStatus",
+			fpgaSerialNumber
+		);
+		status.clear();
+		status = str_split(ret, delim);
+		if (status.size() != 2 || status.at(0).compare("GetReimagingStatus") != 0) {
+			std::cout << "reimaging return status: " << status.at(1) << std::endl;
+			return -EFAULT;
+		}
+		if (status.at(1).compare("3") != 0) {
+			sleep(1);
+			wait++;
+			continue;
+		} else {
+			std::cout << "reimaging return status: " << status.at(1) << " within " << wait << "s" << std::endl;
+			return 0;
+		}
+	} while (wait < 5);
+	
+	return -ETIMEDOUT;
 }
 
 AzureDev::~AzureDev()
@@ -198,7 +229,7 @@ AzureDev::AzureDev(size_t index)
 }
 
 //private methods
-// REST operations using libcurl (-lcurl)
+//REST operations using libcurl (-lcurl)
 int AzureDev::UploadToWireServer(
 	std::string ip,
 	std::string endpoint,
@@ -248,7 +279,7 @@ int AzureDev::UploadToWireServer(
 		
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 		
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+		//curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 		res = curl_easy_perform(curl);
 		
 		if (res != CURLE_OK) {
@@ -264,16 +295,15 @@ int AzureDev::UploadToWireServer(
 	return 0;
 }
 
-int AzureDev::StartReimage(
+std::string AzureDev::REST_Get(
 	std::string ip,
 	std::string endpoint,
 	std::string target
 )
 {
-	int ret  = 0;
 	CURL *curl;
 	CURLcode res;
-	std::string readbuff;
+	std::string readbuff = "";
 	
 	curl = curl_easy_init();
 	if(curl)
@@ -285,26 +315,26 @@ int AzureDev::StartReimage(
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readbuff);
 		
+		//curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 		res = curl_easy_perform(curl);
 		
 		if(res != CURLE_OK)
 		{
 			std::cout <<  "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-			ret = -1;
 		}
 		
 		std::cout << "String returned: " << readbuff << std::endl;
 		curl_easy_cleanup(curl);
 		//TODO: add code to interpret readbuff to see whether reimage succeeds.
 	}
-	return ret;
+	return readbuff;
 }
 
 // use -lcrypto for SHA operations
 int AzureDev::Sha256AndSplit(
-		const std::string &input,
-	   	std::vector<std::string> &output,
-	   	std::string &sha)
+	const std::string &input,
+	std::vector<std::string> &output,
+	std::string &sha)
 {
 	// Initialize openssl
 	SHA256_CTX context;
@@ -318,7 +348,7 @@ int AzureDev::Sha256AndSplit(
 	
 	while (pos < input.size())
 	{
-		std::string segment = input.substr(pos, pos + TRANSFER_SEGMENT_SIZE);
+		std::string segment = input.substr(pos, TRANSFER_SEGMENT_SIZE);
 	
 		if(!SHA256_Update(&context, segment.c_str(), segment.size()))
 		{
@@ -352,5 +382,32 @@ int AzureDev::Sha256AndSplit(
 void AzureDev::get_fpga_serialNo(std::string &fpgaSerialNo)
 {
 	std::string errmsg;
-	dev->sysfs_get("", "serialNo", errmsg, fpgaSerialNo);
+	dev->sysfs_get("xmc", "serial_num", errmsg, fpgaSerialNo);
+	//fpgaSerialNo = "1281002AT024";
+}
+
+std::string AzureDev::str_trim(std::string &str)
+{
+	size_t first = str.find_first_not_of(' ');
+	size_t last = str.find_last_not_of(' ');
+
+	return str.substr(first, last-first+1);
+}
+
+std::vector<std::string> AzureDev::str_split(const std::string &str, const std::string &delim)
+{
+	std::vector<std::string> ret;
+	size_t prev = 0, pos = 0;
+
+	do {
+		pos = str.find(delim, prev);
+		if (pos == std::string::npos)
+		        pos = str.size();
+		std::string elem = str.substr(prev, pos-prev);
+		if (!elem.empty())
+		        ret.push_back(str_trim(elem));
+		prev = pos + delim.size();
+	} while (pos < str.size() && prev < str.size());
+
+	return ret;
 }
