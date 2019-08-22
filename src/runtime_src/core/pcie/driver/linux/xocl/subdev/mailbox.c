@@ -2099,7 +2099,7 @@ mailbox_write(struct file *file, const char __user *buf, size_t n,
 		mutex_unlock(&ch->sw_chan_mutex);
 		return -ENOMEM;
 	}
-	if (copy_from_user(payload, buf + sizeof(struct sw_chan),
+	if (copy_from_user(payload, ((struct sw_chan *)buf)->data,
 		args.sz) != 0) {
 		mutex_unlock(&ch->sw_chan_mutex);
 		vfree(payload);
