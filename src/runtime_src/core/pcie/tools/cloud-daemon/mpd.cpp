@@ -27,6 +27,8 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <libudev.h>
+#include <boost/algorithm/string.hpp>
 
 #include <fstream>
 #include <vector>
@@ -54,7 +56,10 @@ static std::shared_ptr<Msgq<hotreset_msg>> hotreset_q_req;
 static std::map<std::string, std::atomic<bool>> threads_handling;
 static std::map<std::string, std::atomic<bool>> remove_done;
 static std::map<std::string, std::atomic<bool>> add_done;
+static std::map<std::string, std::atomic<bool>> being_hotreset;
 static std::map<std::string, std::shared_ptr<Msgq<queue_msg>>> threads_msgq;
+udev* mpd_hotplug;
+udev_monitor* mpd_hotplug_monitor;
 
 class Mpd : public Common
 {
@@ -90,6 +95,12 @@ private:
 
 void Mpd::start()
 {
+    mpd_hotplug = udev_new();
+    if (!mpd_hotplug)
+        throw std::runtime_error("mpd: can't create udev object");
+    mpd_hotplug_monitor = udev_monitor_new_from_netlink(mpd_hotplug, "udev");
+    udev_monitor_enable_receiving(mpd_hotplug_monitor);
+
     if (plugin_handle != nullptr) {
         plugin_init = (init_fn) dlsym(plugin_handle, INIT_FN_NAME);
         plugin_fini = (fini_fn) dlsym(plugin_handle, FINI_FN_NAME);
@@ -125,6 +136,7 @@ void Mpd::run()
             syslog(LOG_INFO, "no device found");
         for (size_t i = 0; i < total; i++) {
             std::string sysfs_name = pcidev::get_dev(i, true)->sysfs_name;
+
             if (threads_getMsg.find(sysfs_name) != threads_getMsg.end() &&
                 threads_handleMsg.find(sysfs_name) != threads_handleMsg.end())
                 continue;
@@ -152,6 +164,7 @@ void Mpd::run()
             threads_msgq[sysfs_name] = msgq;
             add_done[sysfs_name] = false;
             remove_done[sysfs_name] = false;
+            being_hotreset[sysfs_name] = false;
             threads_getMsg.insert(std::pair<std::string, std::thread>(sysfs_name,
                 std::move(std::thread(Mpd::mpd_getMsg, i))));
             threads_handleMsg.insert(std::pair<std::string, std::thread>(sysfs_name,
@@ -160,22 +173,81 @@ void Mpd::run()
 
         syslog(LOG_INFO, "%ld pairs of threads running...", threads_getMsg.size());
 
+        int udev_fd = udev_monitor_get_fd(mpd_hotplug_monitor);
         while (!quit)
         {
+            std::string sysfs_name;
+            HOTRESET_MSG_TYPE msg_type = ILLEGAL_REQ;
             hotreset_msg req_msg;
+            /*
+             * For those support hotplug (eg. azure hotreset), we don't handle
+             * the udev event msg.
+             */
             int ret = hotreset_q_req->getMsg(1, req_msg);
-            if (ret) //timeout
+            if (ret) {// no hotreset, check udev event
+                ret = waitForMsg(udev_fd, 3);
+                if (ret) { //timeout
                     continue;
+                } else { //udev events
+                    udev_device* udev_dev = udev_monitor_receive_device(mpd_hotplug_monitor);
+                    if (!udev_dev)
+                        continue;
+                    const char *subsystem = udev_device_get_subsystem(udev_dev);
+                    if (!subsystem || (strcmp(subsystem, "xrt_user"))) {
+                        udev_device_unref(udev_dev);
+                        continue;
+                    }
+                    const char *devpath = udev_device_get_devpath(udev_dev);
+                    if (!devpath) {
+                        udev_device_unref(udev_dev);
+                        continue;
+                    }
+                    std::string pathStr = devpath;
+                    size_t pos_e = pathStr.find("mailbox.u");
+                    if (pos_e == std::string::npos) {
+                        udev_device_unref(udev_dev);
+                        continue;
+                    }
+                    size_t pos_s = pathStr.substr(0, pos_e-1).rfind("/"); 
+                    sysfs_name = pathStr.substr(pos_s+1, pos_e-pos_s-2);
+                    if (being_hotreset.find(sysfs_name) == being_hotreset.end() ||
+                        being_hotreset[sysfs_name]) {
+                        udev_device_unref(udev_dev);
+                        continue;
+                    }
+                    const char *action = udev_device_get_action(udev_dev);
+                    if (action && strcmp(action, "remove") == 0) {
+                        syslog(LOG_INFO, "udev: %s %s", action, devpath);
+                        msg_type = REMOVE_REQ;
+                        udev_device_unref(udev_dev);
+                    } else if (action && strcmp(action, "add") == 0) {
+                        syslog(LOG_INFO, "udev: %s %s", action, devpath);
+                        msg_type = ADD_REQ;
+                        udev_device_unref(udev_dev);
+                    } else {
+                        continue;
+                        udev_device_unref(udev_dev);
+                    }
+                }
+            } else { //hotreset msg
+                sysfs_name = req_msg.sysfs_name;
+                msg_type = req_msg.type;
+            }
 
-            if (req_msg.type == REMOVE_REQ) {
-                syslog(LOG_INFO, "receive req to close mailbox: %s", req_msg.sysfs_name.c_str());
-                threads_handling[req_msg.sysfs_name] = false;
-                threads_getMsg[req_msg.sysfs_name].join();
-                threads_getMsg.erase(req_msg.sysfs_name);
-                add_done.erase(req_msg.sysfs_name);
-                remove_done[req_msg.sysfs_name] = true;
-            } else if (req_msg.type == ADD_REQ) {
-                syslog(LOG_INFO, "receive req to open mailbox: %s", req_msg.sysfs_name.c_str());
+
+            if (msg_type == REMOVE_REQ) {
+                syslog(LOG_INFO, "receive req to close mailbox: %s", sysfs_name.c_str());
+                threads_handling[sysfs_name] = false;
+                threads_getMsg[sysfs_name].join();
+                threads_getMsg.erase(sysfs_name);
+                if (!being_hotreset[sysfs_name]) {
+                    threads_handleMsg[sysfs_name].join();
+                    threads_handleMsg.erase(sysfs_name);
+                }
+                add_done.erase(sysfs_name);
+                remove_done[sysfs_name] = true;
+            } else if (msg_type == ADD_REQ) {
+                syslog(LOG_INFO, "receive req to open mailbox: %s", sysfs_name.c_str());
                 break;
             } else //never goes here
                 throw;
@@ -196,6 +268,10 @@ void Mpd::stop()
         t.second.join();
     }
 
+    if (mpd_hotplug_monitor)
+        udev_monitor_unref(mpd_hotplug_monitor);
+    if (mpd_hotplug)
+        udev_unref(mpd_hotplug);
 
     if (plugin_fini)
         (*plugin_fini)(plugin_cbs.mpc_cookie);
@@ -385,6 +461,7 @@ int Mpd::localMsgHandler(const pcieFunc& dev, std::unique_ptr<sw_msg>& orig,
             dev.log(LOG_INFO, "mpd daemon: pre-hotreset");
             hotreset_msg msg;
             std::string sysfs_name = pcidev::get_dev(dev.getIndex(), true)->sysfs_name;
+            being_hotreset[sysfs_name] = true;
             msg.sysfs_name = sysfs_name;
             msg.type = REMOVE_REQ;
             hotreset_q_req->addMsg(msg);
@@ -413,6 +490,7 @@ int Mpd::localMsgHandler(const pcieFunc& dev, std::unique_ptr<sw_msg>& orig,
             while (add_done.find(sysfs_name) == add_done.end()
                    || !add_done[sysfs_name])
                 sleep(1);
+            being_hotreset[sysfs_name] = false;
         }
         break;
     }
@@ -477,21 +555,21 @@ void Mpd::mpd_getMsg(size_t index)
     if (plugin_cbs.get_remote_msd_fd) {
         ret = (*plugin_cbs.get_remote_msd_fd)(dev.getIndex(), &msdfd);
         if (ret) {
-            syslog(LOG_ERR, "failed to get remote fd in plugin");
-            quit = true;
+            dev.log(LOG_ERR, "failed to get remote fd in plugin");
+            threads_handling[sysfs_name] = false;
             return;
         }
         cb = Mpd::localMsgHandler;
     } else {
         if (!dev.loadConf()) {
-            quit = true;
+            threads_handling[sysfs_name] = false;
             return;
         }
 
         ip = getIP(dev.getHost());
         if (ip.empty()) {
             dev.log(LOG_ERR, "Can't find out IP from host: %s", dev.getHost());
-            quit = true;
+            threads_handling[sysfs_name] = false;
             return;
         }
 
@@ -499,14 +577,14 @@ void Mpd::mpd_getMsg(size_t index)
             ip.c_str(), dev.getPort(), dev.getId());
 
         if ((msdfd = connectMsd(dev, ip, dev.getPort(), dev.getId())) < 0) {
-            quit = true;
+            threads_handling[sysfs_name] = false;
             return;
         }
     }
 
     mbxfd = dev.getMailbox();
     if (mbxfd == -1) {
-        quit = true;
+        threads_handling[sysfs_name] = false;
         return;
     }
 
@@ -524,8 +602,10 @@ void Mpd::mpd_getMsg(size_t index)
     if (plugin_cbs.mb_notify) {
         ret = (*plugin_cbs.mb_notify)(index, mbxfd, true);
         if (ret)
-            syslog(LOG_ERR, "failed to mark mgmt as online");
+            dev.log(LOG_ERR, "failed to mark mgmt as online");
     }
+
+    add_done[sysfs_name] = true;
 
     struct queue_msg msg = {
         .localFd = mbxfd,
@@ -580,12 +660,12 @@ void Mpd::mpd_getMsg(size_t index)
     if (plugin_cbs.mb_notify) {
         ret = (*plugin_cbs.mb_notify)(index, mbxfd, false);
         if (ret)
-            syslog(LOG_ERR, "failed to mark mgmt as offline");
+            dev.log(LOG_ERR, "failed to mark mgmt as offline");
     }
 
     if (msdfd > 0)     
         close(msdfd);
-    dev.log(LOG_INFO, "mpd_getMsg thread %d exit!!", index);
+    dev.log(LOG_INFO, "mpd_getMsg thread exit!!");
 }
 
 // Client of MPD handling msg. Will quit on any error from either local mailbox or socket fd.
@@ -608,7 +688,7 @@ void Mpd::mpd_handleMsg(size_t index)
             break;
     }
     threads_handling[sysfs_name] = false;
-    dev.log(LOG_INFO, "mpd_handleMsg thread %d exit!!", index);
+    dev.log(LOG_INFO, "mpd_handleMsg thread exit!!");
 }
 
 /*
