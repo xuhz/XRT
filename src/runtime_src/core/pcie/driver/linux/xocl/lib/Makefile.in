@@ -42,3 +42,8 @@ libfdt-y	:= ../lib/libfdt/fdt.o		\
 		../lib/libfdt/fdt_strerror.o	\
 		../lib/libfdt/fdt_sw.o		\
 		../lib/libfdt/fdt_wip.o
+
+libmcdi-y	:= ../lib/libmcdi/efx_io.o	\
+		../lib/libmcdi/efx_buffer.o	\
+		../lib/libmcdi/ef100_func_ctrl.o \
+		../lib/libmcdi/mcdi.o

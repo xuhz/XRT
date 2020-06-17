@@ -244,6 +244,8 @@ Flasher::Flasher(unsigned int index) : mFRHeader{}
     std::string err;
     bool is_mfg = false;
     dev->sysfs_get<bool>("", "mfg", err, is_mfg, false);
+    std::string mcdi, tmp;
+    dev->sysfs_get("", "mcdi", mcdi, tmp);
 
     std::vector<char> feature_rom;
     dev->sysfs_get("rom", "raw", err, feature_rom);
@@ -263,7 +265,7 @@ Flasher::Flasher(unsigned int index) : mFRHeader{}
     {
         dev->pcieBarRead(MFG_REV_OFFSET, &mGoldenVer, sizeof(mGoldenVer));
     }
-    else
+    else if (!mcdi.empty())
     {
         std::cout << "ERROR: card not supported." << std::endl;
     }
@@ -361,10 +363,12 @@ DSAInfo Flasher::getOnBoardDSA()
     std::string err;
     std::string board_name;
     std::string uuid;
+    std::string mcdi, tmp;
     bool is_mfg = false;
     mDev->sysfs_get<bool>("", "mfg", err, is_mfg, false);
     mDev->sysfs_get("", "board_name", err, board_name);
     mDev->sysfs_get("rom", "uuid", err, uuid);
+    mDev->sysfs_get("", "mcdi", mcdi, tmp);
     if (is_mfg)
     {
         std::stringstream ss;
@@ -377,7 +381,7 @@ DSAInfo Flasher::getOnBoardDSA()
         vbnv = std::string(reinterpret_cast<char *>(mFRHeader.VBNVName));
         ts = mFRHeader.TimeSinceEpoch;
     }
-    else if (!uuid.size())
+    else if (!uuid.size() && !mcdi.empty())
     {
         std::cout << "ERROR: Platform name not found" << std::endl;
     }

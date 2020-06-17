@@ -289,8 +289,17 @@ void pcidev::pci_device::sysfs_get(
 
 static std::string get_devfs_path(bool is_mgmt, uint32_t instance)
 {
-    std::string prefixStr = is_mgmt ? "/dev/xclmgmt" : "/dev/dri/" RENDER_NM;
+    std::string prefixStr;
     std::string instStr = std::to_string(instance);
+
+    if (is_mgmt) {
+        struct stat buf;
+        prefixStr = "/dev/xclmgmt";
+        if (stat((prefixStr + instStr).c_str(), &buf))
+            prefixStr = "/dev/efxmgmt";
+    } else {
+        prefixStr = "/dev/dri/" RENDER_NM;
+    }
 
     return prefixStr + instStr;
 }
